@@ -71,7 +71,7 @@ type ClaimRequest struct {
 
 type VerifyClaimRequest struct {
 	VerifiedBy     string `json:"verified_by" binding:"required"`
-	Pass           bool   `json:"pass" binding:"required"`
+	Pass           *bool  `json:"pass" binding:"required"`
 	RejectReason   string `json:"reject_reason"`
 }
 
@@ -524,7 +524,7 @@ func VerifyClaim(claimID int64, req *VerifyClaimRequest) (*model.ClaimRecord, er
 	claim.VerifiedBy = req.VerifiedBy
 	claim.VerifiedAt = &now
 
-	if req.Pass {
+	if *req.Pass {
 		claim.Status = model.ClaimStatusVerified
 
 		var report model.LostReport
@@ -538,7 +538,7 @@ func VerifyClaim(claimID int64, req *VerifyClaimRequest) (*model.ClaimRecord, er
 			Find(&otherClaims)
 		for i := range otherClaims {
 			otherClaims[i].Status = model.ClaimStatusRejected
-			otherClaims[i].Remark = fmt.Sprintf("已有其他认领通过核验: %s", req.RejectReason)
+			otherClaims[i].Remark = "已有其他认领通过核验"
 			repository.DB.Save(&otherClaims[i])
 		}
 	} else {
