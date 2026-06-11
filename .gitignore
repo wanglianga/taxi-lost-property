@@ -1,0 +1,30 @@
+# Build outputs
+*.exe
+*.test
+*.out
+bin/
+dist/
+build/
+
+# Runtime data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and local environment
+*.log
+.env
+.env.*
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# QA/browser artifacts
+playwright-report/
+test-results/
+screenshots/
+traces/

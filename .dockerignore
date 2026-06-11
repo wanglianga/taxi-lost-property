@@ -1,0 +1,17 @@
+.git
+.gitignore
+*.db
+*.sqlite
+*.sqlite3
+node_modules
+vendor
+data/
+taxi-lost-property
+*.exe
+*.test
+*.out
+*.log
+.vscode/
+.idea/
+.DS_Store
+README.md
