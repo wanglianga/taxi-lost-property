@@ -59,6 +59,7 @@ type TaxiOrder struct {
 	ID             int64     `json:"id" gorm:"primaryKey"`
 	OrderNo        string    `json:"order_no" gorm:"size:50;uniqueIndex;not null"`
 	PlateNo        string    `json:"plate_no" gorm:"size:20;not null"`
+	FleetCompany   string    `json:"fleet_company" gorm:"size:100"`
 	DriverID       int64     `json:"driver_id" gorm:"not null"`
 	DriverName     string    `json:"driver_name" gorm:"size:100;not null"`
 	DriverPhone    string    `json:"driver_phone" gorm:"size:20;not null"`
@@ -72,6 +73,33 @@ type TaxiOrder struct {
 	PaymentNo      string    `json:"payment_no" gorm:"size:50"`
 	PaymentTime    time.Time `json:"payment_time"`
 	CreatedAt      time.Time  `json:"created_at"`
+}
+
+type CandidateVehicle struct {
+	OrderID       int64     `json:"order_id"`
+	PlateNoMasked string    `json:"plate_no_masked"`
+	FleetCompany  string    `json:"fleet_company"`
+	RideTime      time.Time `json:"ride_time"`
+	BoardingPoint string    `json:"boarding_point"`
+	AlightingPoint string   `json:"alighting_point"`
+	Amount        float64   `json:"amount"`
+	PaymentNoMasked string  `json:"payment_no_masked"`
+	MatchRate     float64   `json:"match_rate"`
+}
+
+type ValuableItemType string
+
+const (
+	ValuableItemPhone    ValuableItemType = "phone"
+	ValuableItemWallet   ValuableItemType = "wallet"
+	ValuableItemIDCard   ValuableItemType = "id_card"
+	ValuableItemComputer ValuableItemType = "computer"
+)
+
+type VerifyRequirement struct {
+	Field       string `json:"field"`
+	Description string `json:"description"`
+	Required    bool   `json:"required"`
 }
 
 type DriverSubmission struct {

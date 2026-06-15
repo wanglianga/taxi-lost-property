@@ -60,22 +60,34 @@ func seedData() error {
 
 	orders := []model.TaxiOrder{
 		{
-			OrderNo: "ORD20260610001", PlateNo: "京B·12345", DriverID: 1001,
+			OrderNo: "ORD20260610001", PlateNo: "京B·12345", FleetCompany: "首汽集团", DriverID: 1001,
 			DriverName: "张师傅", DriverPhone: "13800138001", PassengerPhone: "13900139001",
 			BoardingPoint: "北京首都机场T3", AlightingPoint: "朝阳区国贸中心",
 			Distance: 28.5, Amount: 98.50, PaymentNo: "PAY20260610001",
 		},
 		{
-			OrderNo: "ORD20260610002", PlateNo: "京B·67890", DriverID: 1002,
+			OrderNo: "ORD20260610002", PlateNo: "京B·67890", FleetCompany: "北汽集团", DriverID: 1002,
 			DriverName: "李师傅", DriverPhone: "13800138002", PassengerPhone: "13900139002",
 			BoardingPoint: "北京南站", AlightingPoint: "海淀区中关村",
 			Distance: 18.2, Amount: 62.00, PaymentNo: "PAY20260610002",
 		},
 		{
-			OrderNo: "ORD20260610003", PlateNo: "京B·54321", DriverID: 1003,
+			OrderNo: "ORD20260610003", PlateNo: "京B·54321", FleetCompany: "首汽集团", DriverID: 1003,
 			DriverName: "王师傅", DriverPhone: "13800138003", PassengerPhone: "13900139003",
 			BoardingPoint: "大兴国际机场", AlightingPoint: "西城区金融街",
 			Distance: 45.0, Amount: 156.00, PaymentNo: "PAY20260610003",
+		},
+		{
+			OrderNo: "ORD20260610004", PlateNo: "京B·99999", FleetCompany: "银建集团", DriverID: 1004,
+			DriverName: "赵师傅", DriverPhone: "13800138004", PassengerPhone: "13900139004",
+			BoardingPoint: "北京西站", AlightingPoint: "朝阳区三里屯",
+			Distance: 15.3, Amount: 52.00, PaymentNo: "PAY20260610004",
+		},
+		{
+			OrderNo: "ORD20260610005", PlateNo: "京B·88888", FleetCompany: "北汽集团", DriverID: 1005,
+			DriverName: "刘师傅", DriverPhone: "13800138005", PassengerPhone: "13900139005",
+			BoardingPoint: "朝阳区国贸中心", AlightingPoint: "海淀区五道口",
+			Distance: 22.1, Amount: 75.50, PaymentNo: "PAY20260610005",
 		},
 	}
 	now := parseTime("2026-06-10 14:30:00")

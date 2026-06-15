@@ -2,12 +2,30 @@ package service
 
 import (
 	"errors"
-	"fmt"
+	"sort"
 	"strings"
 	"taxi-lost-property/internal/model"
 	"taxi-lost-property/internal/repository"
 	"time"
 )
+
+type FuzzySearchRequest struct {
+	ApproxTime    time.Time `json:"approx_time" binding:"required"`
+	TimeWindowMin int       `json:"time_window_min"`
+	Area          string    `json:"area"`
+	RouteKeyword  string    `json:"route_keyword"`
+	PaymentNoPart string    `json:"payment_no_part"`
+	FleetCompany  string    `json:"fleet_company"`
+	AmountMin     float64   `json:"amount_min"`
+	AmountMax     float64   `json:"amount_max"`
+}
+
+type ClaimVerifyMaterials struct {
+	WallpaperDesc string `json:"wallpaper_desc"`
+	IDCardTail    string `json:"id_card_tail"`
+	WalletItems   string `json:"wallet_items"`
+	ComputerInfo  string `json:"computer_info"`
+}
 
 type LostReportRequest struct {
 	PassengerName   string    `json:"passenger_name" binding:"required"`
@@ -52,21 +70,22 @@ type InventoryRequest struct {
 }
 
 type ClaimRequest struct {
-	ReportID          int64              `json:"report_id" binding:"required"`
-	InventoryID       int64              `json:"inventory_id" binding:"required"`
-	PassengerName     string             `json:"passenger_name" binding:"required"`
-	PassengerPhone    string             `json:"passenger_phone" binding:"required"`
-	PassengerIDCard   string             `json:"passenger_id_card"`
-	VerifyMaterials   string             `json:"verify_materials"`
-	VerifyDescription string             `json:"verify_description" binding:"required"`
-	ReturnMethod      model.ReturnMethod `json:"return_method" binding:"required"`
-	ExpressNo         string             `json:"express_no"`
-	ExpressCompany    string             `json:"express_company"`
-	ReceiverName      string             `json:"receiver_name"`
-	ReceiverPhone     string             `json:"receiver_phone"`
-	ReceiverAddress   string             `json:"receiver_address"`
-	PickupStationID   int64              `json:"pickup_station_id"`
-	Remark            string             `json:"remark"`
+	ReportID             int64                  `json:"report_id" binding:"required"`
+	InventoryID          int64                  `json:"inventory_id" binding:"required"`
+	PassengerName        string                 `json:"passenger_name" binding:"required"`
+	PassengerPhone       string                 `json:"passenger_phone" binding:"required"`
+	PassengerIDCard      string                 `json:"passenger_id_card"`
+	VerifyMaterials      string                 `json:"verify_materials"`
+	VerifyDescription    string                 `json:"verify_description"`
+	ValuableVerifyMaterials *ClaimVerifyMaterials `json:"valuable_verify_materials"`
+	ReturnMethod         model.ReturnMethod     `json:"return_method" binding:"required"`
+	ExpressNo            string                 `json:"express_no"`
+	ExpressCompany       string                 `json:"express_company"`
+	ReceiverName         string                 `json:"receiver_name"`
+	ReceiverPhone        string                 `json:"receiver_phone"`
+	ReceiverAddress      string                 `json:"receiver_address"`
+	PickupStationID      int64                  `json:"pickup_station_id"`
+	Remark               string                 `json:"remark"`
 }
 
 type VerifyClaimRequest struct {
@@ -427,6 +446,38 @@ func CreateClaim(req *ClaimRequest) (*model.ClaimRecord, error) {
 		return nil, errors.New("贵重物品认领必须提供身份证号")
 	}
 
+	itemType := DetectValuableItemType(inventory.ItemDescription, inventory.ItemCategory)
+	if itemType != "" {
+		if err := ValidateValuableItemClaim(itemType, req.ValuableVerifyMaterials); err != nil {
+			return nil, err
+		}
+
+		var verifyDescParts []string
+		if req.ValuableVerifyMaterials != nil {
+			if req.ValuableVerifyMaterials.WallpaperDesc != "" {
+				verifyDescParts = append(verifyDescParts, "屏保描述: "+req.ValuableVerifyMaterials.WallpaperDesc)
+			}
+			if req.ValuableVerifyMaterials.IDCardTail != "" {
+				verifyDescParts = append(verifyDescParts, "证件尾号: "+req.ValuableVerifyMaterials.IDCardTail)
+			}
+			if req.ValuableVerifyMaterials.WalletItems != "" {
+				verifyDescParts = append(verifyDescParts, "包内物品: "+req.ValuableVerifyMaterials.WalletItems)
+			}
+			if req.ValuableVerifyMaterials.ComputerInfo != "" {
+				verifyDescParts = append(verifyDescParts, "设备特征: "+req.ValuableVerifyMaterials.ComputerInfo)
+			}
+		}
+		if req.VerifyDescription == "" {
+			req.VerifyDescription = strings.Join(verifyDescParts, "; ")
+		} else {
+			req.VerifyDescription += "; " + strings.Join(verifyDescParts, "; ")
+		}
+	}
+
+	if req.VerifyDescription == "" {
+		return nil, errors.New("请提供物品核验描述")
+	}
+
 	if req.ReturnMethod == model.ReturnMethodExpress {
 		if req.ReceiverName == "" || req.ReceiverPhone == "" || req.ReceiverAddress == "" {
 			return nil, errors.New("快递寄回必须填写收件人姓名、电话和地址")
@@ -622,4 +673,226 @@ func ListOrders(page, size int) ([]model.TaxiOrder, int64, error) {
 	}
 
 	return orders, total, nil
+}
+
+func maskPlateNo(plateNo string) string {
+	if len(plateNo) <= 3 {
+		return strings.Repeat("*", len(plateNo))
+	}
+	prefix := plateNo[:3]
+	suffix := plateNo[len(plateNo)-1:]
+	middle := strings.Repeat("*", len(plateNo)-4)
+	return prefix + middle + suffix
+}
+
+func maskPaymentNo(paymentNo string) string {
+	if len(paymentNo) <= 4 {
+		return strings.Repeat("*", len(paymentNo))
+	}
+	prefix := paymentNo[:3]
+	suffix := paymentNo[len(paymentNo)-2:]
+	middle := strings.Repeat("*", len(paymentNo)-5)
+	return prefix + middle + suffix
+}
+
+func FuzzySearchVehicles(req *FuzzySearchRequest) ([]model.CandidateVehicle, error) {
+	timeWindow := time.Duration(req.TimeWindowMin) * time.Minute
+	if timeWindow == 0 {
+		timeWindow = 2 * time.Hour
+	}
+	startTime := req.ApproxTime.Add(-timeWindow)
+	endTime := req.ApproxTime.Add(timeWindow)
+
+	var orders []model.TaxiOrder
+	query := repository.DB.Where("(ride_start_time BETWEEN ? AND ? OR ride_end_time BETWEEN ? AND ?)",
+		startTime, endTime, startTime, endTime)
+
+	if req.FleetCompany != "" {
+		query = query.Where("fleet_company LIKE ?", "%"+req.FleetCompany+"%")
+	}
+	if req.AmountMin > 0 {
+		query = query.Where("amount >= ?", req.AmountMin)
+	}
+	if req.AmountMax > 0 {
+		query = query.Where("amount <= ?", req.AmountMax)
+	}
+	if req.PaymentNoPart != "" {
+		query = query.Where("payment_no LIKE ?", "%"+req.PaymentNoPart+"%")
+	}
+
+	if err := query.Find(&orders).Error; err != nil {
+		return nil, err
+	}
+
+	var candidates []model.CandidateVehicle
+	for _, order := range orders {
+		matchRate := calculateFuzzyMatchRate(req, &order)
+		if matchRate > 0 {
+			candidates = append(candidates, model.CandidateVehicle{
+				OrderID:         order.ID,
+				PlateNoMasked:   maskPlateNo(order.PlateNo),
+				FleetCompany:    order.FleetCompany,
+				RideTime:        order.RideStartTime,
+				BoardingPoint:   order.BoardingPoint,
+				AlightingPoint:  order.AlightingPoint,
+				Amount:          order.Amount,
+				PaymentNoMasked: maskPaymentNo(order.PaymentNo),
+				MatchRate:       matchRate,
+			})
+		}
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].MatchRate > candidates[j].MatchRate
+	})
+
+	return candidates, nil
+}
+
+func calculateFuzzyMatchRate(req *FuzzySearchRequest, order *model.TaxiOrder) float64 {
+	var score float64
+	var totalWeight float64
+
+	timeDiff := order.RideStartTime.Sub(req.ApproxTime).Abs()
+	if timeDiff < 30*time.Minute {
+		score += 30
+	} else if timeDiff < time.Hour {
+		score += 20
+	} else if timeDiff < 2*time.Hour {
+		score += 10
+	}
+	totalWeight += 30
+
+	if req.RouteKeyword != "" {
+		keyword := strings.ToLower(req.RouteKeyword)
+		if strings.Contains(strings.ToLower(order.BoardingPoint), keyword) ||
+			strings.Contains(strings.ToLower(order.AlightingPoint), keyword) {
+			score += 25
+		}
+		totalWeight += 25
+	}
+
+	if req.Area != "" {
+		area := strings.ToLower(req.Area)
+		if strings.Contains(strings.ToLower(order.BoardingPoint), area) ||
+			strings.Contains(strings.ToLower(order.AlightingPoint), area) {
+			score += 20
+		}
+		totalWeight += 20
+	}
+
+	if req.FleetCompany != "" {
+		if strings.Contains(strings.ToLower(order.FleetCompany), strings.ToLower(req.FleetCompany)) {
+			score += 15
+		}
+		totalWeight += 15
+	}
+
+	if req.PaymentNoPart != "" {
+		if strings.Contains(order.PaymentNo, req.PaymentNoPart) {
+			score += 10
+		}
+		totalWeight += 10
+	}
+
+	if totalWeight == 0 {
+		return 0
+	}
+	return score / totalWeight
+}
+
+func DetectValuableItemType(description, category string) model.ValuableItemType {
+	descLower := strings.ToLower(description + " " + category)
+
+	phoneKeywords := []string{"手机", "phone", "iphone", "安卓", "华为", "苹果", "小米", "oppo", "vivo"}
+	for _, kw := range phoneKeywords {
+		if strings.Contains(descLower, kw) {
+			return model.ValuableItemPhone
+		}
+	}
+
+	walletKeywords := []string{"钱包", "wallet", "皮夹", "钱夹"}
+	for _, kw := range walletKeywords {
+		if strings.Contains(descLower, kw) {
+			return model.ValuableItemWallet
+		}
+	}
+
+	idCardKeywords := []string{"身份证", "证件", "护照", "驾驶证", "id card", "idcard"}
+	for _, kw := range idCardKeywords {
+		if strings.Contains(descLower, kw) {
+			return model.ValuableItemIDCard
+		}
+	}
+
+	computerKeywords := []string{"电脑", "笔记本", "laptop", "computer", "macbook", "thinkpad"}
+	for _, kw := range computerKeywords {
+		if strings.Contains(descLower, kw) {
+			return model.ValuableItemComputer
+		}
+	}
+
+	return ""
+}
+
+func GetVerifyRequirements(itemType model.ValuableItemType) []model.VerifyRequirement {
+	switch itemType {
+	case model.ValuableItemPhone:
+		return []model.VerifyRequirement{
+			{Field: "wallpaper_desc", Description: "请描述手机屏保图片内容（如：蓝色海洋壁纸、家人照片等）", Required: true},
+		}
+	case model.ValuableItemWallet:
+		return []model.VerifyRequirement{
+			{Field: "wallet_items", Description: "请描述钱包内的物品（如：银行卡数量、现金金额、会员卡等）", Required: true},
+		}
+	case model.ValuableItemIDCard:
+		return []model.VerifyRequirement{
+			{Field: "id_card_tail", Description: "请提供身份证号后4位", Required: true},
+		}
+	case model.ValuableItemComputer:
+		return []model.VerifyRequirement{
+			{Field: "computer_info", Description: "请描述电脑特征（如：品牌型号、桌面背景、登录密码提示等）", Required: true},
+		}
+	default:
+		return nil
+	}
+}
+
+func ValidateValuableItemClaim(itemType model.ValuableItemType, materials *ClaimVerifyMaterials) error {
+	if materials == nil {
+		return errors.New("请提供核验材料")
+	}
+
+	switch itemType {
+	case model.ValuableItemPhone:
+		if strings.TrimSpace(materials.WallpaperDesc) == "" {
+			return errors.New("认领手机必须提供屏保图片描述")
+		}
+		if len(materials.WallpaperDesc) < 5 {
+			return errors.New("屏保描述过于简单，请提供更详细的特征")
+		}
+	case model.ValuableItemWallet:
+		if strings.TrimSpace(materials.WalletItems) == "" {
+			return errors.New("认领钱包必须描述包内物品")
+		}
+		if len(materials.WalletItems) < 10 {
+			return errors.New("物品描述过于简单，请提供更详细的内容")
+		}
+	case model.ValuableItemIDCard:
+		if strings.TrimSpace(materials.IDCardTail) == "" {
+			return errors.New("认领证件必须提供身份证号后4位")
+		}
+		if len(materials.IDCardTail) != 4 {
+			return errors.New("身份证尾号必须是4位")
+		}
+	case model.ValuableItemComputer:
+		if strings.TrimSpace(materials.ComputerInfo) == "" {
+			return errors.New("认领电脑必须提供设备特征描述")
+		}
+		if len(materials.ComputerInfo) < 10 {
+			return errors.New("设备描述过于简单，请提供更详细的特征")
+		}
+	}
+
+	return nil
 }

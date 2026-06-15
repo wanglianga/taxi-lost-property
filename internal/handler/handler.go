@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"taxi-lost-property/internal/service"
@@ -311,4 +312,38 @@ func ListOrders(c *gin.Context) {
 		return
 	}
 	ok(c, gin.H{"list": orders, "total": total, "page": page, "size": size})
+}
+
+func FuzzySearchVehicles(c *gin.Context) {
+	var req service.FuzzySearchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, err)
+		return
+	}
+	candidates, err := service.FuzzySearchVehicles(&req)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	ok(c, gin.H{"list": candidates, "total": len(candidates)})
+}
+
+func GetVerifyRequirements(c *gin.Context) {
+	inventoryID, err := strconv.ParseInt(c.Query("inventory_id"), 10, 64)
+	if err != nil {
+		fail(c, errors.New("请提供有效的 inventory_id"))
+		return
+	}
+	inventory, err := service.GetInventory(inventoryID)
+	if err != nil {
+		fail(c, errors.New("物品库存不存在"))
+		return
+	}
+	itemType := service.DetectValuableItemType(inventory.ItemDescription, inventory.ItemCategory)
+	requirements := service.GetVerifyRequirements(itemType)
+	ok(c, gin.H{
+		"item_type":     itemType,
+		"is_valuable":   inventory.IsValuable,
+		"requirements":  requirements,
+	})
 }

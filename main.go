@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"taxi-lost-property/internal/handler"
 	"taxi-lost-property/internal/repository"
 
@@ -72,14 +73,28 @@ func main() {
 			orders.GET("", handler.ListOrders)
 			orders.GET("/:id", handler.GetOrder)
 		}
+
+		fuzzy := api.Group("/fuzzy")
+		{
+			fuzzy.POST("/search-vehicles", handler.FuzzySearchVehicles)
+		}
+
+		verify := api.Group("/verify")
+		{
+			verify.GET("/requirements", handler.GetVerifyRequirements)
+		}
 	}
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "taxi-lost-property"})
 	})
 
-	log.Println("服务启动于 :8080")
-	if err := r.Run(":8080"); err != nil {
+	port := ":8080"
+	if os.Getenv("PORT") != "" {
+		port = ":" + os.Getenv("PORT")
+	}
+	log.Printf("服务启动于 %s", port)
+	if err := r.Run(port); err != nil {
 		log.Fatalf("服务启动失败: %v", err)
 	}
 }

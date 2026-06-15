@@ -305,7 +305,181 @@ wl-299/
 
 ---
 
-### 16. 健康检查
+### 16. 模糊查询候选车辆（隐私保护）
+
+**POST** `/api/v1/fuzzy/search-vehicles`
+
+当乘客只记得大概乘车时间和区域时，使用此接口查询候选车辆。接口返回脱敏后的车辆信息，不直接暴露司机姓名、电话、完整车牌号等隐私信息。
+
+请求体：
+```json
+{
+  "approx_time": "2026-06-10T14:30:00Z",
+  "time_window_min": 120,
+  "area": "朝阳区",
+  "route_keyword": "机场",
+  "payment_no_part": "PAY2026",
+  "fleet_company": "首汽",
+  "amount_min": 50,
+  "amount_max": 200
+}
+```
+
+请求参数说明：
+- `approx_time` (必填): 大概乘车时间
+- `time_window_min`: 时间窗口（分钟），默认 120 分钟
+- `area`: 区域关键词（如朝阳区、海淀区）
+- `route_keyword`: 路线关键词（匹配上下车地点）
+- `payment_no_part`: 支付流水号片段
+- `fleet_company`: 车队公司名称
+- `amount_min`: 最小金额
+- `amount_max`: 最大金额
+
+响应示例（脱敏后）：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "order_id": 1,
+        "plate_no_masked": "京B****5",
+        "fleet_company": "首汽集团",
+        "ride_time": "2026-06-10T10:30:00Z",
+        "boarding_point": "北京首都机场T3",
+        "alighting_point": "朝阳区国贸中心",
+        "amount": 98.5,
+        "payment_no_masked": "PAY*******01",
+        "match_rate": 0.95
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+**隐私保护说明**：
+- 车牌号仅显示前3位和最后1位，中间用 `*` 代替
+- 支付流水号仅显示前3位和最后2位，中间用 `*` 代替
+- 不返回司机姓名、司机电话、司机ID等隐私信息
+- 结果按匹配度从高到低排序
+
+---
+
+### 17. 获取贵重物品核验要求
+
+**GET** `/api/v1/verify/requirements?inventory_id=1`
+
+查询认领某物品时需要提供的核验材料。系统会自动识别物品类型（手机/钱包/证件/电脑），并返回对应的核验要求。
+
+查询参数：
+- `inventory_id` (必填): 物品库存ID
+
+响应示例（手机）：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "item_type": "phone",
+    "is_valuable": true,
+    "requirements": [
+      {
+        "field": "wallpaper_desc",
+        "description": "请描述手机屏保图片内容（如：蓝色海洋壁纸、家人照片等）",
+        "required": true
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 18. 乘客提交认领申请（含贵重物品核验）
+
+**POST** `/api/v1/claims`
+
+对于手机、钱包、证件、电脑等贵重物品，需要根据物品类型提供对应的核验材料。
+
+请求体（认领手机）：
+```json
+{
+  "report_id": 1,
+  "inventory_id": 1,
+  "passenger_name": "张三",
+  "passenger_phone": "13800138000",
+  "passenger_id_card": "110101199001011234",
+  "verify_materials": "购买凭证照片",
+  "valuable_verify_materials": {
+    "wallpaper_desc": "蓝色海洋壁纸，右下角有一张全家福照片"
+  },
+  "return_method": "pickup",
+  "pickup_station_id": 1
+}
+```
+
+请求体（认领钱包）：
+```json
+{
+  "report_id": 1,
+  "inventory_id": 2,
+  "passenger_name": "李四",
+  "passenger_phone": "13900139000",
+  "passenger_id_card": "110101199002025678",
+  "valuable_verify_materials": {
+    "wallet_items": "内有身份证1张、建行银行卡2张、现金约500元、星巴克会员卡1张"
+  },
+  "return_method": "pickup",
+  "pickup_station_id": 1
+}
+```
+
+请求体（认领证件）：
+```json
+{
+  "report_id": 1,
+  "inventory_id": 3,
+  "passenger_name": "王五",
+  "passenger_phone": "13700137000",
+  "passenger_id_card": "110101199003039012",
+  "valuable_verify_materials": {
+    "id_card_tail": "9012"
+  },
+  "return_method": "express",
+  "express_company": "顺丰速运",
+  "receiver_name": "王五",
+  "receiver_phone": "13700137000",
+  "receiver_address": "北京市海淀区中关村大街1号"
+}
+```
+
+请求体（认领电脑）：
+```json
+{
+  "report_id": 1,
+  "inventory_id": 4,
+  "passenger_name": "赵六",
+  "passenger_phone": "13600136000",
+  "passenger_id_card": "110101199004043456",
+  "valuable_verify_materials": {
+    "computer_info": "MacBook Pro 14寸银色，桌面背景是雪山，登录密码提示为生日"
+  },
+  "return_method": "pickup",
+  "pickup_station_id": 1
+}
+```
+
+**贵重物品核验规则**：
+- **手机**: 必须提供屏保图片描述，至少5个字符
+- **钱包**: 必须描述包内物品，至少10个字符
+- **证件**: 必须提供身份证号后4位，长度必须为4位
+- **电脑**: 必须提供设备特征描述，至少10个字符
+
+---
+
+### 19. 健康检查
 
 **GET** `/health`
 
